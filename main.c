@@ -1,14 +1,13 @@
 #define UART_BASE 0x10000000UL
-
-#define UART_RBR (unsigned char *)(UART_BASE + 0x0)
-#define UART_THR (unsigned char *)(UART_BASE + 0x0)
-#define UART_IER (unsigned char *)(UART_BASE + 0x1)
-#define UART_LSR (unsigned char *)(UART_BASE + 0x5)
+#define UART_RBR  (unsigned int *)(UART_BASE + 0x0)
+#define UART_THR  (unsigned int *)(UART_BASE + 0x0)
+#define UART_LSR  (unsigned int *)(UART_BASE + 0x14)
 
 #define BUF_SIZE 16
 
+extern char _load_start[];
+
 char uart_recv();
-char uart_getc();
 void uart_putc(char c);
 void uart_puts(const char *s);
 void uart_hex(unsigned long h);
@@ -16,11 +15,7 @@ int atoi(const char *s);
 
 void main(long hartid, long dbt_addr)
 {
-    uart_getc();
-    uart_puts("\nUART Booltloader\n");
-    uart_puts("&main = ");
-    uart_hex((unsigned long)&main);
-    uart_puts("\n");
+    uart_puts("\nVF2 UART Booltloader\n");
 
     char buffer[BUF_SIZE];
     for (int i = 0; i < BUF_SIZE; i++) {
@@ -31,20 +26,18 @@ void main(long hartid, long dbt_addr)
         }
     }
 
-    uart_puts("Kernel size: ");
-    uart_puts(buffer);
-    uart_puts(" (");
     int size = atoi(buffer);
+    uart_puts("[INFO] Kernel size = ");
     uart_hex(size);
-    uart_puts(")\n");
+    uart_puts("\n");
 
-    char *kernel_addr = (char *)0x80200000;
+    char *data = (char *)_load_start;
     while (size--)
-        *kernel_addr++ = uart_recv();
-    uart_puts("Kernel loaded\n");
+        *data++ = uart_recv();
 
-    asm volatile("fence.i");
-    ((typeof(&main))(kernel_addr))(hartid, dbt_addr);
+    uart_puts("Booting...\n");
+    asm("fence.i");
+    ((typeof(&main))(_load_start))(hartid, dbt_addr);
 }
 
 char uart_recv()
@@ -52,14 +45,6 @@ char uart_recv()
     while ((*UART_LSR & 0x01) == 0)
         ;
     return (char)*UART_RBR;
-}
-
-char uart_getc()
-{
-    while ((*UART_LSR & 0x01) == 0)
-        ;
-    char c = (char)*UART_RBR;
-    return c == '\r' ? '\n' : c;
 }
 
 void uart_putc(char c)
@@ -73,8 +58,9 @@ void uart_putc(char c)
 
 void uart_puts(const char *s)
 {
-    while (*s)
+    while (*s) {
         uart_putc(*s++);
+    }
 }
 
 void uart_hex(unsigned long h)
